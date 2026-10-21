@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>User Profile</title>
+<style>
+:root{--o:#f60;--od:#e65500;--os:#fff2ea;--ink:#222;--mut:#6b7280;--err:#d93025}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#fff;font:14px/1.5 Arial,sans-serif;color:var(--ink)}
+.box{text-align:center;max-width:340px;width:100%}
+.sp{width:34px;height:34px;border:3px solid #eee;border-top-color:var(--o);border-radius:50%;animation:s .8s linear infinite;margin:0 auto 16px}
+@keyframes s{to{transform:rotate(360deg)}}
+h1{font-size:16px;margin:0 0 6px}
+p{margin:0 0 14px;color:var(--mut);font-size:13px;word-break:break-word}
+.err h1{color:var(--err)}
+.btn{display:inline-block;background:var(--o);color:#fff;font-weight:700;border:0;border-radius:10px;padding:11px 18px;font:700 14px Arial,sans-serif;text-decoration:none;cursor:pointer}
+.btn:hover{background:var(--od)}
+.btn.ghost{background:var(--os);color:var(--o);margin-left:6px}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="box" id="box">
+  <div class="sp" id="sp"></div>
+  <h1 id="t">Opening user profile…</h1>
+  <p id="m">Reading ticket details</p>
+  <div id="acts" class="hide"></div>
+</div>
+
+<script type="module">
+/* Yellow.ai YApps SDK - available only when the app runs inside Yellow.ai */
+try { const m = await import('https://cdn.yellowmessenger.com/yapps-sdk/v1.0.0/widget.js'); window.yApp = new m.YAppWidget(); }
+catch (e) { console.warn('YApps SDK not available - running standalone', e); window.yAppErr = String((e && e.message) || e); window.yAppFailed = true; }
+</script>
+<script>
+/* ===== CONFIG ===== */
+const PROFILE_URL   = 'http://www.lulucrm.com/internal/userprofile';  // use https:// if the site supports it (see note)
+const PHONE_PARAM   = 'phoneNumber';       // -> ?phoneNumber=919025293003
+const EMAIL_PARAM   = 'email';             // -> ?email=name@example.com
+const CF_NAME       = 'user_Details';      // ticket custom field name in Yellow.ai (case/space/symbol-insensitive)
+
+const $ = id => document.getElementById(id);
+const nk = k => String(k).toLowerCase().replace(/[^a-z0-9]/g, '');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function walk(o, fn, d = 10) {
+  if (!o || typeof o !== 'object' || d < 0) return;
+  fn(o);
+  for (const k of Object.keys(o)) walk(o[k], fn, d - 1);
+}
+/* value of the custom field, whatever shape (string / {value:..} / nested) */
+function prim(v, d = 3) {
+  if (v == null) return '';
+  if (typeof v !== 'object') return String(v).trim();
+  if (d < 0) return '';
+  for (const k of ['value', 'fieldValue', 'val', 'text', 'data', 'selectedValue']) if (v[k] != null) { const r = prim(v[k], d - 1); if (r) return r; }
+  return '';
+}
+/* Yellow.ai shape: definitions customFields:[{name:"user_Details", key:"s3"}]
+                    values      ticketDetails.customFields:{ s3:"..." } */
+function getField(raw) {
+  let key = '', val = '';
+  walk(raw, o => { if (!key && !Array.isArray(o) && typeof o.name === 'string' && typeof o.key === 'string' && nk(o.name) === nk(CF_NAME)) key = o.key; });
+  if (key) walk(raw, o => { if (!val && !Array.isArray(o) && Object.prototype.hasOwnProperty.call(o, key)) val = prim(o[key]); });
+  if (!val) walk(raw, o => { if (!val && !Array.isArray(o)) for (const k of Object.keys(o)) if (nk(k) === nk(CF_NAME)) val = prim(o[k]); });
+  return { key, val };
+}
+
+/* email -> ?email=..., phone -> ?phoneNumber=<digits only> */
+function buildUrl(v) {
+  v = String(v || '').trim();
+  if (!v) return null;
+  let param, value;
+  if (v.includes('@')) { param = EMAIL_PARAM; value = v.toLowerCase(); }
+  else {
+    const digits = v.replace(/\D/g, '').replace(/^00/, '');
+    if (digits.length < 6) return null;
+    param = PHONE_PARAM; value = digits;
+  }
+  return PROFILE_URL + '?' + param + '=' + encodeURIComponent(value);
+}
+
+function fail(title, msg) {
+  $('box').classList.add('err'); $('sp').classList.add('hide');
+  $('t').textContent = title; $('m').textContent = msg;
+  $('acts').classList.remove('hide'); $('acts').innerHTML = '<button class="btn" id="retry">Retry</button>';
+  $('retry').onclick = () => location.reload();
+}
+function go(url) {
+  $('m').innerHTML = esc(url);
+  $('acts').classList.remove('hide');
+  $('acts').innerHTML = `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Open in new tab</a>`;
+  try { window.location.replace(url); } catch (e) { console.warn('redirect blocked', e); }
+}
+
+(async function main() {
+  /* test outside Yellow.ai:  ...user-profile-redirect.html?user=919025293003  or  ?user=a@b.com */
+  const q = new URLSearchParams(location.search).get('user');
+  if (q) { const u = buildUrl(q); return u ? go(u) : fail('Invalid user details', q); }
+
+  const t0 = Date.now();
+  while (!window.yApp && !window.yAppFailed && Date.now() - t0 < 5000) await new Promise(r => setTimeout(r, 100));
+  const y = window.yApp;
+  if (!y) {
+    const framed = window.self !== window.top;
+    return fail('YApps SDK not loaded',
+      (framed ? 'Running inside an iframe. ' : 'Opened directly in the browser (not inside Yellow.ai). ') +
+      (window.yAppErr ? 'SDK error: ' + window.yAppErr : 'SDK did not respond within 5 seconds.'));
+  }
+
+  const un = r => r && (r.eventResponse && r.eventResponse.eventData || r.data) || r;
+  const T = p => Promise.race([Promise.resolve(p), new Promise(r => setTimeout(() => r(null), 6000))]);
+  const R = await Promise.allSettled([T(y.ask && y.ask('ask_ticket_cf_info')), T(y.getTicketCF && y.getTicketCF())]);
+  const raw = R.map(p => p.status === 'fulfilled' ? un(p.value) : null);
+  console.log('[YApps] custom fields:', raw);
+
+  const f = getField(raw);
+  console.log('[user_Details] key:', f.key || '(not found)', '| value:', JSON.stringify(f.val));
+  if (!f.key && !f.val) return fail('Field not found', 'Custom field "' + CF_NAME + '" is not available on this ticket.');
+  if (!f.val) return fail('No user details', '"' + CF_NAME + '" is empty on this ticket.');
+
+  const url = buildUrl(f.val);
+  if (!url) return fail('Unrecognised value', '"' + f.val + '" is neither an email nor a phone number.');
+  go(url);
+})();
+</script>
+</body>
+</html>
