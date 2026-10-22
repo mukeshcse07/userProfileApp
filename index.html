@@ -35,7 +35,7 @@ catch (e) { console.warn('YApps SDK not available - running standalone', e); win
 </script>
 <script>
 /* ===== CONFIG ===== */
-const PROFILE_URL   = 'http://www.lulucrm.com/internal/userprofile';  // use https:// if the site supports it (see note)
+const PROFILE_URL   = 'https://www.lulucrm.com/internal/userprofile';  // MUST be https: Yellow.ai runs this app in an https iframe, browsers block http pages there
 const PHONE_PARAM   = 'phoneNumber';       // -> ?phoneNumber=919025293003
 const EMAIL_PARAM   = 'email';             // -> ?email=name@example.com
 const CF_NAME       = 'user_Details';      // ticket custom field name in Yellow.ai (case/space/symbol-insensitive)
@@ -92,6 +92,14 @@ function go(url) {
   $('acts').classList.remove('hide');
   $('acts').innerHTML = `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Open in new tab</a>`;
   try { window.location.replace(url); } catch (e) { console.warn('redirect blocked', e); }
+  /* If this code is still running after 1.5s, the browser blocked the in-frame redirect
+     (http page in https iframe, or the target site refuses to be framed) -> open a new tab automatically. */
+  setTimeout(() => {
+    $('t').textContent = 'Opening in a new tab…';
+    const w = window.open(url, '_blank', 'noopener');
+    if (!w) $('t').textContent = 'Redirect was blocked - click the button below';
+    console.warn('[Redirect] in-frame redirect did not happen. Check: https URL, and X-Frame-Options / frame-ancestors on the target site.');
+  }, 1500);
 }
 
 (async function main() {
