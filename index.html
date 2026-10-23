@@ -38,6 +38,7 @@ catch (e) { console.warn('YApps SDK not available - running standalone', e); win
 const PROFILE_URL   = 'https://www.lulucrm.com/internal/userprofile';  // MUST be https: Yellow.ai runs this app in an https iframe, browsers block http pages there
 const PHONE_PARAM   = 'phoneNumber';       // -> ?phoneNumber=919025293003
 const EMAIL_PARAM   = 'email';             // -> ?email=name@example.com
+const OPEN_MODE     = 'tab';           // 'tab' = open new browser tab (works when the site blocks framing) | 'frame' = redirect inside the sidebar
 const CF_NAME       = 'user_Details';      // ticket custom field name in Yellow.ai (case/space/symbol-insensitive)
 
 const $ = id => document.getElementById(id);
@@ -88,18 +89,17 @@ function fail(title, msg) {
   $('retry').onclick = () => location.reload();
 }
 function go(url) {
-  $('m').innerHTML = esc(url);
+  $('sp').classList.add('hide');
+  $('m').textContent = url;
   $('acts').classList.remove('hide');
-  $('acts').innerHTML = `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Open in new tab</a>`;
-  try { window.location.replace(url); } catch (e) { console.warn('redirect blocked', e); }
-  /* If this code is still running after 1.5s, the browser blocked the in-frame redirect
-     (http page in https iframe, or the target site refuses to be framed) -> open a new tab automatically. */
-  setTimeout(() => {
-    $('t').textContent = 'Opening in a new tab…';
-    const w = window.open(url, '_blank', 'noopener');
-    if (!w) $('t').textContent = 'Redirect was blocked - click the button below';
-    console.warn('[Redirect] in-frame redirect did not happen. Check: https URL, and X-Frame-Options / frame-ancestors on the target site.');
-  }, 1500);
+  $('acts').innerHTML = `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Open user profile</a>`;
+  if (OPEN_MODE === 'frame') { try { window.location.replace(url); } catch (e) { console.warn('redirect blocked', e); } return; }
+  /* 'tab' mode: the target site refuses to be shown inside Yellow.ai (X-Frame-Options), so open it as a new tab.
+     The in-frame redirect is NOT used because it would replace this page with a browser error and stop all code. */
+  $('t').textContent = 'Opening user profile in a new tab…';
+  const w = window.open(url, '_blank', 'noopener');
+  if (w) $('t').textContent = 'User profile opened in a new tab';
+  else $('t').textContent = 'Popup blocked - click the button to open the profile';
 }
 
 (async function main() {
